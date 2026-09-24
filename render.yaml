@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: site-audit-console
+    runtime: docker
+    plan: free
+    envVars:
+      - key: AUTH_USER
+        sync: false
+      - key: AUTH_PASS
+        sync: false
+      - key: NODE_ENV
+        value: production

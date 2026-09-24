@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Site Audit Console</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
+      <circle cx="10.5" cy="10.5" r="6.5" fill="none" stroke="currentColor" stroke-width="2"/>
+      <path d="M15.5 15.5 L21 21" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+      <path d="M7.5 10.5 l2 2 4-4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+    </svg>
+    <span>Site Audit Console</span>
+  </div>
+  <div class="topbar-actions">
+    <button id="newCrawlBtn" class="btn btn-ghost hidden">New crawl</button>
+  </div>
+</header>
+
+<main>
+  <!-- ============ SETUP ============ -->
+  <section id="setup" class="setup">
+    <div class="setup-inner">
+      <h1>Crawl a site, find what's broken.</h1>
+      <p class="lede">Enter a URL. The crawler walks every internal page, checks it against SEO and technical rules, and hands you a list you can work through.</p>
+
+      <div class="urlbar">
+        <input id="seedUrl" type="url" placeholder="https://example.com" autocomplete="url" spellcheck="false" />
+        <button id="startBtn" class="btn btn-primary">Start crawl</button>
+      </div>
+      <p class="hint">Press Enter to start. Crawling stays on this machine.</p>
+
+      <div class="opts">
+        <label class="field">
+          <span>Crawl mode</span>
+          <select id="mode">
+            <option value="auto" selected>Auto — HTTP, browser if needed</option>
+            <option value="http">HTTP only — fastest</option>
+            <option value="browser">Browser only — renders JavaScript</option>
+          </select>
+        </label>
+        <label class="field">
+          <span>Page limit</span>
+          <input id="maxPages" type="number" value="50" min="1" max="500" />
+        </label>
+        <label class="field">
+          <span>Link depth</span>
+          <input id="maxDepth" type="number" value="3" min="0" max="10" />
+        </label>
+        <label class="field field-check">
+          <input id="respectRobots" type="checkbox" checked />
+          <span>Follow robots.txt rules</span>
+        </label>
+      </div>
+
+      <details id="customDetails" class="panel">
+        <summary>
+          <span class="panel-title">Check against your own rules</span>
+          <span class="panel-sub">Upload a redirect list, meta sheet, or schema spec — optional</span>
+        </summary>
+        <div class="panel-body">
+          <div class="note">
+            Google Sheets and Docs links need a login, so they can't be read from a URL.
+            Use <strong>File → Download</strong> to save a <code>.csv</code>, <code>.xlsx</code> or <code>.docx</code>, then add it here.
+          </div>
+
+          <div id="dropzone" class="dropzone" tabindex="0" role="button" aria-label="Add rule files">
+            <input id="ruleFiles" type="file" multiple hidden
+                   accept=".csv,.xlsx,.xls,.xlsm,.tsv,.json,.jsonld,.docx,.txt,.md" />
+            <svg viewBox="0 0 24 24" width="26" height="26" aria-hidden="true">
+              <path d="M12 16V4m0 0L7.5 8.5M12 4l4.5 4.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+              <path d="M4 15v3.5A1.5 1.5 0 0 0 5.5 20h13a1.5 1.5 0 0 0 1.5-1.5V15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+            </svg>
+            <p><strong>Drop files here</strong> or click to browse</p>
+            <p class="dz-formats">CSV · XLSX · JSON · DOCX · TXT</p>
+          </div>
+          <ul id="fileList" class="filelist"></ul>
+
+          <div class="panel-row">
+            <label class="field">
+              <span>When your rules disagree with the built-in ones</span>
+              <select id="conflictMode">
+                <option value="extend" selected>Run both sets of checks</option>
+                <option value="override">Your rules win for those URLs</option>
+                <option value="ignore">Skip my rules this time</option>
+              </select>
+            </label>
+            <button id="previewBtn" class="btn btn-ghost" type="button">Preview what was read</button>
+          </div>
+          <div id="rulePreview" class="rulepreview hidden"></div>
+        </div>
+      </details>
+    </div>
+  </section>
+
+  <!-- ============ PROGRESS ============ -->
+  <section id="progress" class="progress hidden">
+    <div class="progress-inner">
+      <div class="progress-head">
+        <div>
+          <h2 id="progressTitle">Crawling</h2>
+          <p id="progressTarget" class="mono muted"></p>
+        </div>
+        <div class="progress-pct"><span id="progressPercent">0</span><small>%</small></div>
+      </div>
+      <div class="track"><div id="progressBar" class="fill"></div></div>
+      <div class="progress-stats">
+        <div><strong id="statFound">0</strong><span>found</span></div>
+        <div><strong id="statCrawled">0</strong><span>crawled</span></div>
+      </div>
+      <ul id="crawlLog" class="log" aria-live="polite"></ul>
+    </div>
+  </section>
+
+  <!-- ============ RESULTS ============ -->
+  <section id="results" class="results hidden">
+    <div id="banner"></div>
+
+    <div class="scoreboard">
+      <div class="score">
+        <svg viewBox="0 0 120 120" width="104" height="104" aria-hidden="true">
+          <circle cx="60" cy="60" r="52" fill="none" stroke="var(--line)" stroke-width="10"/>
+          <circle id="scoreArc" cx="60" cy="60" r="52" fill="none" stroke="var(--pass)" stroke-width="10"
+                  stroke-linecap="round" stroke-dasharray="327" stroke-dashoffset="327"
+                  transform="rotate(-90 60 60)"/>
+        </svg>
+        <div class="score-val"><span id="scoreVal">—</span></div>
+        <p class="score-label">Health score</p>
+      </div>
+      <div class="tallies">
+        <button class="tally t-fail" data-jump="FAIL"><strong id="failVal">0</strong><span>Failing</span></button>
+        <button class="tally t-warn" data-jump="WARNING"><strong id="warnVal">0</strong><span>Warnings</span></button>
+        <button class="tally t-info" data-jump="INFO"><strong id="infoVal">0</strong><span>For review</span></button>
+        <div class="tally t-plain"><strong id="pagesVal">0</strong><span>Pages crawled</span></div>
+      </div>
+    </div>
+
+    <nav class="tabs" role="tablist">
+      <button class="tab is-active" data-tab="issues" role="tab">Issues <span id="tabIssuesCount" class="count">0</span></button>
+      <button class="tab" data-tab="pages" role="tab">Pages <span id="tabPagesCount" class="count">0</span></button>
+      <button class="tab" data-tab="custom" role="tab" hidden>Your rules <span id="tabCustomCount" class="count">0</span></button>
+      <div class="tabs-spacer"></div>
+      <button id="exportCsvBtn" class="btn btn-ghost btn-sm">Export CSV</button>
+      <button id="exportJsonBtn" class="btn btn-ghost btn-sm">Export JSON</button>
+    </nav>
+
+    <!-- Issues -->
+    <div id="panel-issues" class="tabpanel">
+      <div class="toolbar">
+        <input id="issueSearch" type="search" class="search" placeholder="Search issues or URLs" />
+        <select id="filterSeverity"><option value="">Any severity</option><option value="FAIL">Failing</option><option value="WARNING">Warning</option><option value="INFO">For review</option></select>
+        <select id="filterCategory"><option value="">Any category</option></select>
+        <select id="filterRuleType"><option value="">Built-in + yours</option><option value="Standard">Built-in only</option><option value="Custom">Your rules only</option></select>
+        <span id="issueShown" class="muted sm"></span>
+      </div>
+      <div class="tablewrap">
+        <table class="grid">
+          <thead><tr>
+            <th class="w-sev">Severity</th>
+            <th data-sort="category">Category</th>
+            <th data-sort="url">URL</th>
+            <th data-sort="issue">What's wrong</th>
+            <th>Expected</th>
+            <th>Found</th>
+          </tr></thead>
+          <tbody id="issuesBody"></tbody>
+        </table>
+        <div id="issuesEmpty" class="empty hidden"></div>
+      </div>
+    </div>
+
+    <!-- Pages -->
+    <div id="panel-pages" class="tabpanel hidden">
+      <div class="toolbar">
+        <input id="pageSearch" type="search" class="search" placeholder="Search pages" />
+        <button class="chip" data-select="all">Select all</button>
+        <button class="chip" data-select="issues">Select pages with issues</button>
+        <button class="chip" data-select="none">Clear</button>
+        <span class="spacer"></span>
+        <label class="inline-field">Open
+          <select id="batchSize"><option>5</option><option selected>10</option><option>20</option><option>50</option></select>
+          at a time
+        </label>
+        <button id="openBatchBtn" class="btn btn-primary btn-sm">Open next batch</button>
+      </div>
+      <p id="batchStatus" class="batchstatus"></p>
+      <div class="tablewrap">
+        <table class="grid">
+          <thead><tr>
+            <th class="w-cb"><input id="selectAllCb" type="checkbox" aria-label="Select all pages" /></th>
+            <th data-sort="url">URL</th>
+            <th data-sort="status">Status</th>
+            <th data-sort="title">Title</th>
+            <th data-sort="h1">H1</th>
+            <th data-sort="index">Indexable</th>
+            <th data-sort="issues">Issues</th>
+            <th></th>
+          </tr></thead>
+          <tbody id="pagesBody"></tbody>
+        </table>
+        <div id="pagesEmpty" class="empty hidden"></div>
+      </div>
+    </div>
+
+    <!-- Custom rules -->
+    <div id="panel-custom" class="tabpanel hidden">
+      <div id="customWarnings" class="warnbox hidden"></div>
+      <div class="tablewrap">
+        <table class="grid">
+          <thead><tr>
+            <th data-sort="url">URL</th><th>Status</th><th>Check</th><th>Expected</th><th>Found</th><th class="w-res">Result</th>
+          </tr></thead>
+          <tbody id="customBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+</main>
+
+<!-- ============ PAGE DETAIL DRAWER ============ -->
+<div id="drawerScrim" class="scrim hidden"></div>
+<aside id="drawer" class="drawer hidden" role="dialog" aria-modal="true" aria-labelledby="drawerUrl">
+  <header class="drawer-head">
+    <div>
+      <p class="drawer-eyebrow">Page detail</p>
+      <p id="drawerUrl" class="mono drawer-url"></p>
+    </div>
+    <button id="drawerClose" class="iconbtn" aria-label="Close">&times;</button>
+  </header>
+  <div class="drawer-actions">
+    <a id="drawerOpen" class="btn btn-primary btn-sm" target="_blank" rel="noopener">Open page</a>
+    <button id="drawerCopy" class="btn btn-ghost btn-sm">Copy URL</button>
+  </div>
+  <div id="drawerBody" class="drawer-body"></div>
+</aside>
+
+<div id="toast" class="toast hidden"></div>
+
+<script src="app.js"></script>
+</body>
+</html>
