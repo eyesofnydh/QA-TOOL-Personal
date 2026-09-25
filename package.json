@@ -4,17 +4,19 @@
   "type": "module",
   "private": true,
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "test": "node --test",
+    "test:ui": "node scripts/ui-smoke.mjs"
   },
   "dependencies": {
-    "express": "^4.19.2",
     "cheerio": "^1.0.0",
-    "playwright": "^1.47.0",
-    "multer": "^1.4.5-lts.1",
-    "xlsx": "^0.18.5",
-    "mammoth": "^1.8.0"
+    "express": "^4.19.2",
+    "mammoth": "^1.8.0",
+    "multer": "2.4.0",
+    "playwright": "1.63.0",
+    "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
   },
   "engines": {
-    "node": ">=18"
+    "node": ">=22"
   }
 }

@@ -3,6 +3,7 @@ services:
     name: site-audit-console
     runtime: docker
     plan: free
+    healthCheckPath: /healthz
     envVars:
       - key: AUTH_USER
         sync: false
@@ -10,3 +11,5 @@ services:
         sync: false
       - key: NODE_ENV
         value: production
+      - key: MAX_ACTIVE_CRAWLS
+        value: "1"

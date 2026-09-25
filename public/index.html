@@ -36,14 +36,22 @@
         <input id="seedUrl" type="url" placeholder="https://example.com" autocomplete="url" spellcheck="false" />
         <button id="startBtn" class="btn btn-primary">Start crawl</button>
       </div>
-      <p class="hint">Press Enter to start. Crawling stays on this machine.</p>
+      <p class="hint">Crawls run on the server. HTTP mode uses less memory; choose Browser for JavaScript-heavy sites.</p>
+      <details class="panel" id="historyPanel">
+        <summary><span class="panel-title">Recent reports</span><span class="panel-sub">Saved in this browser</span></summary>
+        <div class="panel-body">
+          <p class="hint">Up to 5 completed reports are kept on this device. Export important results for a permanent copy.</p>
+          <div id="historyList"></div>
+          <button id="clearHistoryBtn" class="btn btn-ghost" type="button">Clear saved reports</button>
+        </div>
+      </details>
 
       <div class="opts">
         <label class="field">
           <span>Crawl mode</span>
           <select id="mode">
-            <option value="auto" selected>Auto — HTTP, browser if needed</option>
-            <option value="http">HTTP only — fastest</option>
+            <option value="auto">Auto — HTTP, browser if needed</option>
+            <option value="http" selected>HTTP only — fastest</option>
             <option value="browser">Browser only — renders JavaScript</option>
           </select>
         </label>
@@ -242,7 +250,7 @@
   <div id="drawerBody" class="drawer-body"></div>
 </aside>
 
-<div id="toast" class="toast hidden"></div>
+<div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
 
 <script src="app.js"></script>
 </body>

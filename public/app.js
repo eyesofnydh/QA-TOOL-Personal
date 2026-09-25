@@ -5,6 +5,17 @@ let report = null;
 let batchQueue = [];
 let selectedFiles = [];
 let sortState = { issues: null, pages: null };
+let crawlStarting = false;
+let activeSource = null;
+const storage = {
+  get(key, fallback) { try { return JSON.parse(localStorage.getItem(key)) ?? fallback; } catch { return fallback; } },
+  set(key, value) { try { localStorage.setItem(key, JSON.stringify(value)); return true; } catch { return false; } },
+  remove(key) { try { localStorage.removeItem(key); } catch {} }
+};
+const HISTORY_KEY = 'seo-audit-history-v1';
+const ACTIVE_KEY = 'seo-audit-active-v1';
+let history = storage.get(HISTORY_KEY, []);
+if (!Array.isArray(history)) history = [];
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 function toast(msg) {
@@ -90,14 +101,19 @@ function logLine(text) {
 }
 
 async function startCrawl() {
+  if (crawlStarting || activeSource) return;
   const seedUrl = $('#seedUrl').value.trim();
   if (!seedUrl) { $('#seedUrl').focus(); return toast('Enter a URL to crawl'); }
+  if (!$('#seedUrl').reportValidity() || !$('#maxPages').reportValidity() || !$('#maxDepth').reportValidity()) return;
+  crawlStarting = true;
+  $('#startBtn').disabled = true;
+  $('#newCrawlBtn').classList.add('hidden');
 
   const fd = new FormData();
   fd.append('seedUrl', seedUrl);
   fd.append('mode', $('#mode').value);
   fd.append('maxPages', $('#maxPages').value || '50');
-  fd.append('maxDepth', $('#maxDepth').value || '3');
+  fd.append('maxDepth', $('#maxDepth').value === '' ? '3' : $('#maxDepth').value);
   fd.append('respectRobots', $('#respectRobots').checked ? 'true' : 'false');
   fd.append('conflictMode', $('#conflictMode').value);
   selectedFiles.forEach((f) => fd.append('ruleFiles', f));
@@ -109,6 +125,8 @@ async function startCrawl() {
   $('#progressTarget').textContent = seedUrl;
   $('#progressBar').style.width = '0%';
   $('#progressPercent').textContent = '0';
+  $('#statFound').textContent = '0';
+  $('#statCrawled').textContent = '0';
   batchQueue = [];
 
   let res;
@@ -121,7 +139,17 @@ async function startCrawl() {
   if (res.warnings?.length) res.warnings.forEach(logLine);
   if (res.parsedRules) logLine(`${res.parsedRules} custom rule(s) loaded`);
 
-  const src = new EventSource(`/api/crawl/${res.crawlId}/events`);
+  crawlStarting = false;
+  $('#startBtn').disabled = false;
+  const active = { crawlId: res.crawlId, seedUrl };
+  storage.set(ACTIVE_KEY, active);
+  connectCrawl(active);
+}
+
+function connectCrawl(active) {
+  activeSource?.close();
+  const src = new EventSource(`/api/crawl/${encodeURIComponent(active.crawlId)}/events`);
+  activeSource = src;
   src.addEventListener('progress', (e) => {
     const d = JSON.parse(e.data);
     $('#statFound').textContent = d.pagesFound;
@@ -133,17 +161,36 @@ async function startCrawl() {
   src.addEventListener('done', (e) => {
     report = JSON.parse(e.data);
     src.close();
+    activeSource = null;
+    storage.remove(ACTIVE_KEY);
+    saveReport(report);
     render();
   });
-  src.addEventListener('error', (e) => {
+  src.addEventListener('crawl-error', (e) => {
     let msg = 'The crawl stopped unexpectedly.';
     try { msg = JSON.parse(e.data).message; } catch {}
     src.close();
+    activeSource = null;
+    storage.remove(ACTIVE_KEY);
     failSetup(msg);
+  });
+  src.addEventListener('error', async () => {
+    if (activeSource !== src) return;
+    logLine('Connection interrupted. Reconnecting to your crawl…');
+    try {
+      const response = await fetch(`/api/crawl/${encodeURIComponent(active.crawlId)}`);
+      if (activeSource !== src) return;
+      if (response.status === 404 || response.status === 401) {
+        src.close(); activeSource = null; storage.remove(ACTIVE_KEY);
+        failSetup(response.status === 404 ? 'The server restarted or this crawl expired. Start a new crawl.' : 'Please refresh and sign in again.');
+      }
+    } catch { /* EventSource retries automatically after temporary network failures. */ }
   });
 }
 
 function failSetup(msg) {
+  crawlStarting = false;
+  $('#startBtn').disabled = false;
   $('#progress').classList.add('hidden');
   $('#setup').classList.remove('hidden');
   toast(msg);
@@ -151,10 +198,13 @@ function failSetup(msg) {
 
 /* ============ render ============ */
 function render() {
+  $('#setup').classList.add('hidden');
   $('#progress').classList.add('hidden');
   $('#results').classList.remove('hidden');
   $('#newCrawlBtn').classList.remove('hidden');
   window.scrollTo({ top: 0 });
+  $$('.tab').forEach((t) => t.classList.toggle('is-active', t.dataset.tab === 'issues'));
+  $$('.tabpanel').forEach((p) => p.classList.toggle('hidden', p.id !== 'panel-issues'));
 
   const s = report.summary;
   $('#banner').innerHTML = s.checkedPages === 0
@@ -295,7 +345,7 @@ $('#openBatchBtn').addEventListener('click', () => {
     if (!batchQueue.length) return toast('Select some pages first');
   }
   const batch = batchQueue.splice(0, Number($('#batchSize').value));
-  batch.forEach((u) => window.open(u, '_blank'));
+  batch.forEach((u) => { if (/^https?:\/\//i.test(u)) window.open(u, '_blank', 'noopener,noreferrer'); });
   $('#batchStatus').textContent = batchQueue.length
     ? `${batchQueue.length} left — click again for the next batch`
     : 'All selected pages opened';
@@ -361,7 +411,7 @@ function openDrawer(url) {
   const p = report.pages.find((x) => x.url === url) || null;
   const issues = report._issuesByUrl[url] || [];
   $('#drawerUrl').textContent = url;
-  $('#drawerOpen').href = url;
+  $('#drawerOpen').href = /^https?:\/\//i.test(url) ? url : '#';
   const a = p?.analysis;
   const rows = (pairs) => pairs.map(([k, v]) =>
     `<div class="drow"><dt>${esc(k)}</dt><dd class="mono">${v === '' || v == null ? '<span class="muted">not set</span>' : esc(v)}</dd></div>`).join('');
@@ -370,6 +420,8 @@ function openDrawer(url) {
     ['Status', p ? p.status : 'not crawled'],
     ['Response time', p?.responseTimeMs ? `${p.responseTimeMs} ms` : ''],
     ['Fetch mode', p?.mode || ''],
+    ['Fetch error', p?.error || ''],
+    ['Browser fallback warning', p?.renderFallbackError || ''],
     ['Final URL', p?.finalUrl !== p?.url ? p?.finalUrl : ''],
     ['Redirects', p?.redirectChain?.length ? p.redirectChain.map((c) => `${c.status} → ${c.to}`).join('\n') : '']
   ])}</div>`;
@@ -432,8 +484,43 @@ function download(name, text, type) {
 $('#exportJsonBtn').onclick = () => report && download('site-audit.json', JSON.stringify(report, null, 2), 'application/json');
 $('#exportCsvBtn').onclick = () => {
   if (!report) return;
-  const q = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+  const q = (v) => {
+    let text = String(v ?? '');
+    if (/^[\s]*[=+@-]/.test(text) || /^[\t\r\n]/.test(text)) text = "'" + text;
+    return `"${text.replace(/"/g, '""')}"`;
+  };
   const head = ['Severity', 'Rule type', 'Category', 'URL', 'Issue', 'Expected', 'Found', 'Recommendation'];
   const rows = report.issues.map((i) => [i.severity, i.ruleType || 'Standard', i.category, i.url, i.issue, i.expected, i.actual, i.recommendation].map(q).join(','));
   download('site-audit-issues.csv', [head.map(q).join(','), ...rows].join('\n'), 'text/csv');
 };
+
+function saveReport(value) {
+  const { _issuesByUrl, ...clean } = value;
+  history = [clean, ...history.filter((r) => r.generatedAt !== clean.generatedAt)].slice(0, 5);
+  while (history.length && !storage.set(HISTORY_KEY, history)) history.pop();
+  if (!history.length) toast('Browser storage is full or unavailable. Export this report to keep it.');
+  renderHistory();
+}
+
+function renderHistory() {
+  $('#historyList').innerHTML = history.length ? history.map((r, index) => `
+    <div class="panel-row"><div><strong>${esc(r.seedUrl || r.pages?.[0]?.url || 'Site audit')}</strong>
+      <p class="hint">${esc(new Date(r.generatedAt).toLocaleString())} · ${esc(r.summary?.pagesCrawled)} pages · Score ${esc(r.summary?.score ?? '—')}</p>
+    </div><button class="btn btn-ghost" data-history="${index}">Open report</button></div>`).join('')
+    : '<p class="muted">Completed reports will appear here.</p>';
+  $$('[data-history]').forEach((button) => button.onclick = () => {
+    report = history[Number(button.dataset.history)];
+    render();
+  });
+}
+$('#clearHistoryBtn').onclick = () => { history = []; storage.remove(HISTORY_KEY); renderHistory(); };
+renderHistory();
+
+const savedCrawl = storage.get(ACTIVE_KEY, null);
+if (savedCrawl?.crawlId) {
+  $('#setup').classList.add('hidden');
+  $('#progress').classList.remove('hidden');
+  $('#progressTarget').textContent = savedCrawl.seedUrl;
+  logLine('Reconnecting to your previous crawl…');
+  connectCrawl(savedCrawl);
+}

@@ -3,7 +3,7 @@ import { assertSafeUrl } from './security.js';
 const MAX_REDIRECTS = 5;
 const MAX_BODY_BYTES = 5 * 1024 * 1024; // 5MB response-size cap
 
-export async function fetchHttp(urlStr, { timeoutMs = 10000 } = {}) {
+export async function fetchHttp(urlStr, { timeoutMs = 10000, readText = false } = {}) {
   let currentUrl = urlStr;
   const chain = [];
   for (let i = 0; i <= MAX_REDIRECTS; i++) {
@@ -22,6 +22,7 @@ export async function fetchHttp(urlStr, { timeoutMs = 10000 } = {}) {
     const responseTimeMs = Date.now() - start;
 
     if ([301, 302, 303, 307, 308].includes(res.status)) {
+      await res.body?.cancel();
       const location = res.headers.get('location');
       if (!location) {
         return { finalUrl: currentUrl, status: res.status, chain, responseTimeMs, error: 'Redirect with no Location header' };
@@ -38,23 +39,23 @@ export async function fetchHttp(urlStr, { timeoutMs = 10000 } = {}) {
     const contentType = res.headers.get('content-type') || '';
     const xRobotsTag = res.headers.get('x-robots-tag') || '';
     let body = '';
-    if (contentType.includes('text/html')) {
+    if (readText || contentType.includes('text/html')) {
       const reader = res.body?.getReader?.();
       if (reader) {
         let received = 0;
         const chunks = [];
-        while (true) {
+        try { while (true) {
           const { done, value } = await reader.read();
           if (done) break;
           received += value.length;
+          if (received > MAX_BODY_BYTES) throw new Error('Response exceeds the 5 MB limit');
           chunks.push(value);
-          if (received > MAX_BODY_BYTES) break;
-        }
+        } } finally { await reader.cancel(); }
         body = Buffer.concat(chunks.map((c) => Buffer.from(c))).toString('utf-8');
       } else {
         body = await res.text();
       }
-    }
+    } else await res.body?.cancel();
     return {
       finalUrl: currentUrl,
       status: res.status,
@@ -63,7 +64,8 @@ export async function fetchHttp(urlStr, { timeoutMs = 10000 } = {}) {
       body,
       chain,
       responseTimeMs,
-      redirected: chain.length > 0
+      redirected: chain.length > 0,
+      mode: 'http'
     };
   }
   return { finalUrl: currentUrl, status: 0, error: 'Too many redirects', chain };
@@ -74,8 +76,10 @@ async function getBrowser() {
   if (!browserPromise) {
     browserPromise = (async () => {
       const { chromium } = await import('playwright');
-      return chromium.launch({ headless: true });
-    })();
+      const browser = await chromium.launch({ headless: true });
+      browser.on('disconnected', () => { browserPromise = null; });
+      return browser;
+    })().catch((err) => { browserPromise = null; throw err; });
   }
   return browserPromise;
 }
@@ -84,9 +88,17 @@ export async function fetchRendered(urlStr, { timeoutMs = 15000 } = {}) {
   await assertSafeUrl(urlStr);
   const start = Date.now();
   const browser = await getBrowser();
-  const page = await browser.newPage();
+  const context = await browser.newContext({ serviceWorkers: 'block' });
   try {
-    const response = await page.goto(urlStr, { waitUntil: 'networkidle', timeout: timeoutMs });
+    await context.route('**/*', async (route) => {
+      try {
+        await assertSafeUrl(route.request().url());
+        await route.continue();
+      } catch { await route.abort(); }
+    });
+    const page = await context.newPage();
+    const response = await page.goto(urlStr, { waitUntil: 'domcontentloaded', timeout: timeoutMs });
+    await page.waitForLoadState('networkidle', { timeout: 3000 }).catch(() => {});
     const body = await page.content();
     const status = response ? response.status() : 0;
     const headers = response ? response.headers() : {};
@@ -98,10 +110,11 @@ export async function fetchRendered(urlStr, { timeoutMs = 15000 } = {}) {
       body,
       chain: [],
       responseTimeMs: Date.now() - start,
-      rendered: true
+      rendered: true,
+      mode: 'browser'
     };
   } finally {
-    await page.close();
+    await context.close();
   }
 }
 

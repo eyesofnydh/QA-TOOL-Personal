@@ -1,10 +1,12 @@
+import { fetchHttp } from './fetcher.js';
+
 export async function fetchRobots(origin) {
   const robotsUrl = origin + '/robots.txt';
   const rules = { disallow: [], allow: [], sitemaps: [] };
   try {
-    const res = await fetch(robotsUrl, { signal: AbortSignal.timeout(8000) });
-    if (!res.ok) return { exists: false, status: res.status, rules };
-    const text = await res.text();
+    const res = await fetchHttp(robotsUrl, { timeoutMs: 8000, readText: true });
+    if (res.error || res.status < 200 || res.status >= 300) return { exists: false, status: res.status, rules };
+    const text = res.body;
     let applicable = false;
     for (const rawLine of text.split('\n')) {
       const line = rawLine.split('#')[0].trim();

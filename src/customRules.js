@@ -1,5 +1,6 @@
 import { fetchHttp } from './fetcher.js';
 import { normalizeUrl } from './urlUtils.js';
+import { analyzePage } from './seoChecks.js';
 
 function sev(severity, category, url, issue, expected, actual, recommendation, ruleType = 'Custom') {
   return { severity, category, url, issue, expected, actual, recommendation, ruleType };
@@ -48,7 +49,8 @@ export async function evaluateCustomRules(rules, pages, { conflictMode = 'extend
     const status = page ? page.status : direct?.status;
     const finalUrl = page ? page.finalUrl : direct?.finalUrl;
     const chain = (page ? page.redirectChain : direct?.chain) || [];
-    const a = page?.analysis || null;
+    const a = page?.analysis || (direct?.body && (direct.contentType || '').includes('text/html')
+      ? analyzePage(direct.body, { url: direct.finalUrl || rule.url, status, xRobotsTag: direct.xRobotsTag }) : null);
     const result = { url: rule.url, source: rule.source, status, finalUrl, checks: [] };
 
     const record = (name, pass, expected, actual) => result.checks.push({ name, pass, expected, actual });

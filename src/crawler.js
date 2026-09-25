@@ -6,8 +6,6 @@ import { analyzePage } from './seoChecks.js';
 import { assertSafeUrl } from './security.js';
 import { evaluateCustomRules, evaluateSchemaSpec } from './customRules.js';
 
-const CONCURRENCY = 4;
-
 export async function runCrawl(job, emit) {
   const { seedUrl, mode, maxPages, maxDepth, respectRobots } = job;
   await assertSafeUrl(seedUrl);
@@ -19,6 +17,7 @@ export async function runCrawl(job, emit) {
 
   const visited = new Set();
   const queue = [{ url: normalizeUrl(seedUrl, seedUrl), depth: 0 }];
+  const discovered = new Set(queue.map((item) => item.url));
   const pages = [];
   let crawled = 0;
 
@@ -44,7 +43,7 @@ export async function runCrawl(job, emit) {
       }
 
       emit('progress', {
-        pagesFound: visited.size + queue.length,
+        pagesFound: discovered.size,
         pagesCrawled: crawled,
         current: url,
         percent: Math.min(99, Math.round((crawled / Math.max(maxPages, 1)) * 100))
@@ -73,6 +72,7 @@ export async function runCrawl(job, emit) {
         redirectChain: result.chain || [],
         mode: result.mode,
         error: result.error,
+        renderFallbackError: result.renderFallbackError,
         analysis
       });
 
@@ -80,21 +80,24 @@ export async function runCrawl(job, emit) {
         const $ = cheerio.load(result.body);
         const links = extractLinks($, result.finalUrl || url);
         for (const link of links) {
-          if (visited.has(link)) continue;
+          if (discovered.has(link)) continue;
           if (!isSameHost(link, hostname)) continue;
-          if (visited.size + queue.length >= maxPages) break;
+          if (discovered.size >= maxPages) break;
+          discovered.add(link);
           queue.push({ url: link, depth: depth + 1 });
         }
       }
     }
   }
 
-  const workers = Array.from({ length: CONCURRENCY }, () => worker());
-  await Promise.all(workers);
+  // One worker keeps browser memory bounded and preserves breadth-first depth order.
+  await worker();
 
   const report = buildReport(pages, robots);
+  report.seedUrl = seedUrl;
+  report.options = { mode, maxPages, maxDepth, respectRobots };
 
-  if (job.customRules && job.customRules.rules.length) {
+  if (job.customRules) {
     emit('progress', { pagesFound: pages.length, pagesCrawled: pages.length, current: 'Checking custom rules...', percent: 99 });
     const { rules, globals, warnings } = job.customRules;
     const { issues: customIssues, results } = await evaluateCustomRules(rules, pages, { conflictMode: job.conflictMode });
@@ -177,11 +180,12 @@ function buildReport(pages, robots) {
   for (const p of pages) {
     if (p.status === 'skipped-robots') continue;
 
-    if (!p.status || p.status >= 400) {
+    if (p.error || !p.status || p.status >= 400) {
       issues.push(sev('FAIL', 'Technical', p.url, `HTTP error`, '2xx/3xx', String(p.status || p.error || 'unknown'), 'Fix the broken page or server error.'));
       continue;
     }
-    if (p.redirectChain && p.redirectChain.length > 2) {
+    if (p.renderFallbackError) issues.push(sev('WARNING', 'Technical', p.url, 'JavaScript rendering unavailable', 'Rendered page', p.renderFallbackError, 'The HTTP response was checked. Check browser availability and retry in Browser mode.'));
+    if (p.redirectChain && p.redirectChain.length > 1) {
       issues.push(sev('WARNING', 'Technical', p.url, 'Long redirect chain', '<= 1 redirect', `${p.redirectChain.length} redirects`, 'Point links directly at the final URL.'));
     }
 

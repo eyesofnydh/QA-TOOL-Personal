@@ -1,157 +1,95 @@
-# SEO + Website QA Audit Tool (Local MVP)
+# Site Audit Console
 
-A real, runnable crawler + SEO/QA auditor. This is the **MVP tier**: crawler →
-pages → HTTP status → title/meta → H1–H6 → indexability, plus a dashboard,
-issue list, and "open pages" batch launcher. It does not yet include every
-feature from the full spec (schema/breadcrumb deep checks, custom rule file
-uploads, crawl history/diffing, PDF/Excel export, Postgres) — see "Not built
-yet" below. The architecture (crawler → parsers → rule engine → issues) is
-laid out so those can be added without rewriting what's here.
+A website crawler with SEO checks, custom rule uploads, page details, issue filters,
+CSV/JSON exports, and recent reports saved in your browser.
 
-## Requirements
+## Run locally
 
-- Node.js 18 or newer (needed for built-in `fetch`)
-- Internet access from this machine to reach whatever site you're auditing
+Requires Node.js 22 or newer.
 
-## Setup
-
-```bash
-cd seo-audit-tool
-npm install
-```
-
-Playwright (used only for "Auto" and "Browser" crawl modes, to render
-JS-heavy pages) needs its browser binary downloaded once:
-
-```bash
+```sh
+npm ci
 npx playwright install chromium
-```
-
-If that step fails or you don't need JS rendering, you can skip it — just use
-**Crawl Mode: HTTP only** in the UI. The app still runs fine; it just won't
-be able to render JavaScript-heavy pages.
-
-## Run
-
-```bash
 npm start
 ```
 
-Then open **http://localhost:4000** in your browser.
+Open http://localhost:4000. Chromium is optional for HTTP-only crawls. Use HTTP
+mode for lower memory consumption, Auto for selective JavaScript rendering, or
+Browser to render every page. A link depth of zero checks only the starting URL.
 
-## Using it
+Environment variables can be set by your shell or hosting provider. To load an
+optional local `.env` file on Node 22+, use `node --env-file=.env server.js`.
+Do not commit credentials.
 
-1. Enter a website URL (e.g. `https://example.com`).
-2. Choose a crawl mode:
-   - **Auto** — tries plain HTTP first; if a page looks like an empty
-     JS-app shell, it re-fetches that page with a real headless browser.
-   - **HTTP only** — fastest, no JS rendering.
-   - **Browser only** — every page rendered with Playwright (slower).
-3. Set max pages / max depth (kept small at first — try 20–50 pages while
-   you get a feel for it before running a full site).
-4. Click **Start Crawl** and watch live progress.
-5. Review the dashboard, sort through the issues table, tick pages, and use
-   **Open Next Batch** to pop them open a batch at a time (this avoids
-   popup-blocker issues — the browser will only allow a handful of
-   `window.open()` calls per user click, which is why it's batched).
-6. **Export JSON** downloads the full report.
+## Deploy or update on Render
 
-## What's actually checked right now
+1. Push the project, including `package-lock.json`, to the connected repository.
+2. Create a Blueprint from `render.yaml`, or update your existing Docker service.
+3. Set both `AUTH_USER` and `AUTH_PASS` in Render's Environment settings.
+4. Set the service health check path to `/healthz` if managing it manually.
+5. Deploy the updated commit, then check `/healthz` and run a small HTTP crawl.
 
-- Crawl: internal link discovery, URL normalization/dedupe, depth tracking,
-  HTTP status, redirect chains + loop detection, robots.txt respect,
-  concurrency limit, per-request timeout, 5MB response cap.
-- SEO: title (missing/duplicate/length), meta description
-  (missing/duplicate), canonical presence, H1 (missing/multiple/empty),
-  heading-level hierarchy jumps, meta-robots + X-Robots-Tag indexability,
-  image alt-text coverage, JSON-LD schema type detection, a basic
-  visible-breadcrumb-vs-BreadcrumbList-schema check.
-- Security: blocks requests to localhost, private IP ranges (10/8, 172.16/12,
-  192.168/16, 127/8, link-local incl. the 169.254.169.254 cloud metadata
-  address), and re-validates on every redirect hop — this is not exhaustive
-  SSRF hardening for a public-facing service, just baseline protection for a
-  tool that fetches user-supplied URLs.
+The Docker image and exact Playwright package version must stay in sync. The
+Docker build uses `npm ci` for reproducible installs. The app binds to `0.0.0.0`
+and honors Render's `PORT`. `/healthz` is public; all other routes use Basic Auth
+when both credentials are configured.
 
-## Not built yet (from the full spec)
+`MAX_ACTIVE_CRAWLS` defaults to 1 to keep memory use bounded. Browser pages are
+processed sequentially. HTTP mode is the default and is the best starting point
+on a small instance. Browser mode can still exhaust a small instance on complex
+sites; upgrade resources if your workloads require it.
 
-These are straightforward to add on top of this base, but aren't in yet:
+See [Render health checks](https://render.com/docs/health-checks) and
+[Playwright Docker setup](https://playwright.dev/docs/docker).
 
-- Custom rule file uploads (JSON/CSV/Excel/PDF/DOCX) and custom schema
-  validation
-- Thank-you/error page pattern configuration and soft-404 detection
-- Sitemap.xml parsing and sitemap-vs-crawl comparison
-- Full breadcrumb link-validity checking
-- CSV/Excel/PDF export (only JSON export exists right now)
-- Persistent storage + crawl history + crawl-to-crawl diffing (current
-  results live in server memory only and are lost on restart)
-- A dedicated page-detail view (right now page-level detail is only in the
-  exported JSON, not a UI panel)
+## What's included
 
-## Going live (hosting it publicly instead of locally)
+- Internal HTTP/HTTPS link discovery with URL deduplication, page and depth limits.
+- Basic robots.txt handling, redirect chains, response limits, timeout handling.
+- Titles, descriptions, headings, indexability, canonical tags, image alt coverage,
+  Open Graph, JSON-LD, breadcrumb detection, and near-duplicate content checks.
+- Custom expectations from CSV, TSV, XLSX/XLS/XLSM, JSON, DOCX, TXT, and Markdown.
+  Preview uploads before starting. URLs outside the crawl can be fetched directly
+  to validate redirect or metadata rules; these extra checks are outside the
+  crawl page limit and robots filtering.
+- Searchable issues and pages, a page detail drawer, batch opening, CSV and JSON.
+- Automatic progress reconnection after temporary connection loss or refresh.
+- Up to five completed reports saved in this browser, subject to storage limits.
+  Use Recent reports to reopen or clear them. Export important reports for backup.
+- A server health endpoint, crawl rate limiting, single-crawl admission by default,
+  JSON validation/upload errors, and bounded completed-job retention.
 
-This app can crawl **any** URL it's given, so once it's reachable on the
-public internet, it needs a password — otherwise anyone can point your
-server at arbitrary sites and use it as an open crawling proxy. That's
-already built in via `AUTH_USER`/`AUTH_PASS` env vars (Basic Auth) plus a
-per-IP rate limit on starting crawls; both are no-ops until you set them.
+## Storage and limits
 
-### Deploy to Render (recommended — free tier, handles Docker + Playwright)
+Running jobs and server reports remain in memory. A Render restart or redeploy
+loses these jobs. Refresh recovery works only while the job is still on the same
+server. Previously saved browser reports survive server restarts, but are not
+shared across devices and disappear if browser storage is cleared. Private
+browsing or full storage may prevent saving; export JSON/CSV in that case.
 
-1. Push this folder to a GitHub repo.
-2. On [render.com](https://render.com), **New → Blueprint**, point it at
-   the repo. It'll read `render.yaml` automatically, which is set to the
-   **Free** instance type.
-3. When prompted, set `AUTH_USER` and `AUTH_PASS` to whatever login you want.
-4. Deploy. Render builds the `Dockerfile` (which already includes Chromium
-   for Playwright — no extra `playwright install` step needed) and gives you
-   a `https://your-app.onrender.com` URL.
-5. Visiting it will prompt for the username/password you set.
+The health score is a heuristic, not a search ranking prediction or a measured
+Core Web Vitals score. The crawler does not implement exhaustive robots.txt
+semantics, sitemap discovery/comparison, PDF reports, durable database history,
+or crawl-to-crawl comparisons yet.
 
-Render's free instance is 512 MB RAM / 0.1 CPU. HTTP-mode crawls run fine on
-it. Auto/Browser mode (real Chromium via Playwright) is memory-hungry —
-expect it to be slow, and it may occasionally run out of memory on a
-JS-heavy site. If that happens, either stick to HTTP mode on the free tier,
-or bump `plan: free` to `plan: starter` in `render.yaml` (a paid tier with
-more RAM) before redeploying.
+Outbound URL checks block common private and internal addresses. HTTP and robots
+redirects are rechecked, and browser requests are screened. This is baseline
+protection, not full SSRF isolation: DNS rebinding and browser networking require
+network-level egress controls for a broadly exposed untrusted crawling service.
+Keep authentication configured and audit sites you are authorized to inspect.
 
-### Deploy to Railway or Fly.io
+SheetJS is pinned to its official patched distribution because the npm-hosted
+`xlsx` release is outdated. See the [official installation instructions](https://docs.sheetjs.com/docs/getting-started/installation/nodejs/).
 
-Same idea — both read the `Dockerfile` directly. Set `AUTH_USER` and
-`AUTH_PASS` as environment variables/secrets in their dashboard or CLI, and
-deploy. No `render.yaml`-equivalent is required; they build from the
-`Dockerfile` by default.
+## Verification
 
-### Deploy with plain Docker anywhere (a VPS, etc.)
-
-```bash
-docker build -t site-audit-console .
-docker run -d -p 4000:4000 \
-  -e AUTH_USER=youruser \
-  -e AUTH_PASS=yourpassword \
-  -e NODE_ENV=production \
-  site-audit-console
+```sh
+npm test
+npm run test:ui
+npm audit
 ```
 
-### Before you actually make it public, know the trade-offs
-
-- **It's still a live crawler pointed at arbitrary sites** — the SSRF
-  protections here (blocking localhost/private IPs) are baseline, not a
-  substitute for running this against sites you trust or have permission to
-  audit. Don't hand the URL out further than you're comfortable with.
-- **Concurrent crawls cost real memory** — each Playwright-rendered page is
-  a full Chromium tab. Free/starter tiers (Render's included) will choke
-  under more than one or two crawls running at once; that's fine for solo
-  use, less fine if several people share the link.
-- **Reports are still in-memory only** — restarting the server (a deploy,
-  a crash, a free-tier idle-then-wake cycle) loses past results. Export to
-  JSON/CSV before closing the tab if you want to keep something.
-- **This is still the MVP tier** from the original scope — see "Not built
-  yet" above. Going live doesn't add features, it just changes where it runs.
-
-## Extending it
-
-- Add new checks in `src/seoChecks.js` (per-page) or `src/crawler.js`
-  (`buildReport`, for cross-page checks like duplicates).
-- Add a new crawl mode or fetcher in `src/fetcher.js`.
-- Swap in-memory job storage in `server.js` for a database once you need
-  history across restarts.
+The UI smoke test needs Chromium (`npx playwright install chromium`). It tests
+results, browser history, refresh recovery, and mobile controls using a fixture
+report; regression tests cover the real server and mocked outbound crawl traffic.
+Neither suite contacts a live Render deployment.

@@ -1,6 +1,7 @@
 export function normalizeUrl(rawUrl, base) {
   try {
     const u = new URL(rawUrl, base);
+    if (!['http:', 'https:'].includes(u.protocol) || u.username || u.password) return null;
     u.hash = '';
     if (u.pathname.length > 1 && u.pathname.endsWith('/')) {
       u.pathname = u.pathname.slice(0, -1);
