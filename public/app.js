@@ -17,6 +17,32 @@ const ACTIVE_KEY = 'seo-audit-active-v1';
 let history = storage.get(HISTORY_KEY, []);
 if (!Array.isArray(history)) history = [];
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const presets = { quick: [20, 2], standard: [50, 3], deep: [200, 5] };
+$$('[data-preset]').forEach((button) => button.onclick = () => {
+  const [pages, depth] = presets[button.dataset.preset];
+  $('#maxPages').value = pages;
+  $('#maxDepth').value = depth;
+  syncPresets();
+});
+function syncPresets() {
+  $$('[data-preset]').forEach((button) => {
+    const [pages, depth] = presets[button.dataset.preset];
+    const selected = Number($('#maxPages').value) === pages && Number($('#maxDepth').value) === depth;
+    button.classList.toggle('is-selected', selected);
+    button.setAttribute('aria-pressed', String(selected));
+  });
+}
+['#maxPages', '#maxDepth'].forEach((selector) => $(selector).addEventListener('input', syncPresets));
+function goToSetup(showHistory = false) {
+  if (activeSource || crawlStarting) return toast('Your audit is still running. Reports will be available when it finishes.');
+  $('#results').classList.add('hidden');
+  $('#setup').classList.remove('hidden');
+  $('#newCrawlBtn').classList.add('hidden');
+  if (showHistory) { $('#historyPanel').open = true; $('#historyPanel').scrollIntoView({ behavior: 'smooth' }); }
+  else window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+$('#navAudit').onclick = () => goToSetup();
+$('#navHistory').onclick = () => goToSetup(true);
 
 function toast(msg) {
   const t = $('#toast');
@@ -207,6 +233,11 @@ function render() {
   $$('.tabpanel').forEach((p) => p.classList.toggle('hidden', p.id !== 'panel-issues'));
 
   const s = report.summary;
+  $('#reportContext').textContent = `${report.seedUrl || report.pages[0]?.url || 'Website audit'} · ${new Date(report.generatedAt).toLocaleString()}`;
+  ['#issueSearch', '#filterSeverity', '#filterRuleType', '#pageSearch', '#pageStatus'].forEach((selector) => $(selector).value = '');
+  sortState = { issues: null, pages: null };
+  $$('.grid th').forEach((th) => th.classList.remove('asc', 'desc'));
+  batchQueue = [];
   $('#banner').innerHTML = s.checkedPages === 0
     ? `<div class="bannerbox"><strong>Nothing was analysed.</strong> robots.txt blocked every URL the crawler tried
        (${s.robotsSkippedCount} skipped). Start a new crawl with “Follow robots.txt rules” switched off to audit it anyway.</div>`
@@ -241,7 +272,38 @@ function render() {
 
   renderIssues();
   renderPages();
+  renderPriorities();
 }
+
+function renderPriorities() {
+  const groups = new Map();
+  const rank = { FAIL: 0, WARNING: 1, INFO: 2 };
+  for (const issue of report.issues) {
+    const key = JSON.stringify([issue.severity, issue.category, issue.issue]);
+    if (!groups.has(key)) groups.set(key, { ...issue, urls: new Set() });
+    groups.get(key).urls.add(issue.url);
+  }
+  const top = [...groups.values()].sort((a, b) => rank[a.severity] - rank[b.severity] || b.urls.size - a.urls.size).slice(0, 4);
+  $('#priorityList').innerHTML = top.length ? top.map((item, index) => `
+    <button class="priority-item" data-priority="${index}"><span class="priority-number">${String(index + 1).padStart(2, '0')}</span>
+      <span class="priority-copy"><strong>${esc(item.issue)}</strong><span>${esc(item.recommendation)}</span></span>
+      <span class="priority-count"><span class="sev sev-${esc(item.severity)}">${item.urls.size} page${item.urls.size === 1 ? '' : 's'}</span><span aria-hidden="true">↗</span></span></button>`).join('')
+    : '<div class="empty">No issues flagged in this audit. Review your page details to see what was checked.</div>';
+  $$('[data-priority]').forEach((button) => button.onclick = () => {
+    const item = top[Number(button.dataset.priority)];
+    $('#issueSearch').value = item.issue;
+    $('#filterSeverity').value = item.severity;
+    $('#filterCategory').value = item.category;
+    $('#filterRuleType').value = '';
+    $('.tab[data-tab="issues"]').click();
+    renderIssues();
+    $('#panel-issues').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  });
+}
+$('#clearFiltersBtn').onclick = () => {
+  ['#issueSearch', '#filterSeverity', '#filterCategory', '#filterRuleType'].forEach((selector) => $(selector).value = '');
+  renderIssues();
+};
 
 /* ---- issues ---- */
 function visibleIssues() {
@@ -286,7 +348,12 @@ function renderIssues() {
 /* ---- pages ---- */
 function visiblePages() {
   const q = $('#pageSearch').value.trim().toLowerCase();
+  const status = $('#pageStatus').value;
   let list = report.pages.filter((p) => p.status !== 'skipped-robots')
+    .filter((p) => !status || (status === 'broken' && (!p.status || p.status >= 400 || p.error))
+      || (status === 'redirected' && (p.redirected || p.redirectChain?.length))
+      || (status === 'noindex' && p.analysis?.indexability?.index === false)
+      || (status === 'issues' && report._issuesByUrl[p.url]?.length))
     .filter((p) => !q || `${p.url} ${p.analysis?.title || ''}`.toLowerCase().includes(q));
   const st = sortState.pages;
   if (st) {
@@ -303,6 +370,9 @@ function visiblePages() {
   return list;
 }
 function renderPages() {
+  batchQueue = [];
+  $('#selectAllCb').checked = false;
+  $('#batchStatus').textContent = '';
   const list = visiblePages();
   $('#pagesEmpty').classList.toggle('hidden', list.length > 0);
   $('#pagesEmpty').textContent = 'No pages match that search.';
@@ -327,6 +397,7 @@ function renderPages() {
   });
 }
 $('#pageSearch').addEventListener('input', renderPages);
+$('#pageStatus').addEventListener('change', renderPages);
 $('#selectAllCb').addEventListener('change', (e) => {
   $$('.rowCb').forEach((cb) => cb.checked = e.target.checked); batchQueue = [];
 });
@@ -407,7 +478,9 @@ $$('[data-jump]').forEach((btn) => btn.onclick = () => {
 });
 
 /* ---- drawer ---- */
+let drawerReturnFocus = null;
 function openDrawer(url) {
+  drawerReturnFocus = document.activeElement;
   const p = report.pages.find((x) => x.url === url) || null;
   const issues = report._issuesByUrl[url] || [];
   $('#drawerUrl').textContent = url;
@@ -427,6 +500,7 @@ function openDrawer(url) {
   ])}</div>`;
 
   if (a) {
+    html += `<div class="dsec"><h3>Search result preview</h3><div class="search-preview"><span>${esc(p.finalUrl || url)}</span><strong>${esc(a.title || 'This page has no title')}</strong><p>${esc(a.metaDescription || 'No meta description is set. Search engines may choose text from the page.')}</p></div><p class="hint">Illustrative preview. Search engines may rewrite titles and descriptions.</p></div>`;
     html += `<div class="dsec"><h3>Metadata</h3>${rows([
       ['Title', a.title], ['Title length', `${a.titleLength} chars`],
       ['Description', a.metaDescription], ['Description length', `${a.metaDescriptionLength} chars`],
@@ -463,8 +537,21 @@ function openDrawer(url) {
   $('#drawerBody').innerHTML = html;
   $('#drawer').classList.remove('hidden');
   $('#drawerScrim').classList.remove('hidden');
+  document.body.style.overflow = 'hidden';
+  $('#drawerClose').focus();
 }
-function closeDrawer() { $('#drawer').classList.add('hidden'); $('#drawerScrim').classList.add('hidden'); }
+function closeDrawer() {
+  $('#drawer').classList.add('hidden'); $('#drawerScrim').classList.add('hidden');
+  document.body.style.overflow = '';
+  drawerReturnFocus?.focus();
+}
+$('#drawer').addEventListener('keydown', (event) => {
+  if (event.key !== 'Tab') return;
+  const focusable = [...$('#drawer').querySelectorAll('button, a[href]')];
+  const first = focusable[0], last = focusable.at(-1);
+  if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+  else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+});
 $('#drawerClose').onclick = closeDrawer;
 $('#drawerScrim').onclick = closeDrawer;
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeDrawer(); });
@@ -474,6 +561,18 @@ $('#drawerCopy').onclick = async () => {
 };
 
 /* ---- export ---- */
+function csvCell(value) {
+  let text = String(value ?? '');
+  if (/^\s*[=+@-]/.test(text) || /^[\t\r\n]/.test(text)) text = "'" + text;
+  return `"${text.replace(/"/g, '""')}"`;
+}
+$('#exportPagesBtn').onclick = () => {
+  if (!report) return;
+  const rows = [['URL', 'Status', 'Final URL', 'Title', 'Description', 'H1 count', 'Indexable', 'Issues'],
+    ...visiblePages().map((p) => [p.url, p.status, p.finalUrl || p.url, p.analysis?.title, p.analysis?.metaDescription,
+      p.analysis?.h1Count, p.analysis ? (p.analysis.indexability.index ? 'Yes' : 'No') : '', report._issuesByUrl[p.url]?.length || 0])];
+  download('site-audit-pages.csv', '\uFEFF' + rows.map((row) => row.map(csvCell).join(',')).join('\r\n'), 'text/csv;charset=utf-8');
+};
 function download(name, text, type) {
   const a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob([text], { type }));
@@ -484,14 +583,9 @@ function download(name, text, type) {
 $('#exportJsonBtn').onclick = () => report && download('site-audit.json', JSON.stringify(report, null, 2), 'application/json');
 $('#exportCsvBtn').onclick = () => {
   if (!report) return;
-  const q = (v) => {
-    let text = String(v ?? '');
-    if (/^[\s]*[=+@-]/.test(text) || /^[\t\r\n]/.test(text)) text = "'" + text;
-    return `"${text.replace(/"/g, '""')}"`;
-  };
   const head = ['Severity', 'Rule type', 'Category', 'URL', 'Issue', 'Expected', 'Found', 'Recommendation'];
-  const rows = report.issues.map((i) => [i.severity, i.ruleType || 'Standard', i.category, i.url, i.issue, i.expected, i.actual, i.recommendation].map(q).join(','));
-  download('site-audit-issues.csv', [head.map(q).join(','), ...rows].join('\n'), 'text/csv');
+  const rows = report.issues.map((i) => [i.severity, i.ruleType || 'Standard', i.category, i.url, i.issue, i.expected, i.actual, i.recommendation].map(csvCell).join(','));
+  download('site-audit-issues.csv', '\uFEFF' + [head.map(csvCell).join(','), ...rows].join('\r\n'), 'text/csv;charset=utf-8');
 };
 
 function saveReport(value) {

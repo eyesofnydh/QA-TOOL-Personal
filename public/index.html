@@ -10,6 +10,14 @@
 <link rel="stylesheet" href="styles.css">
 </head>
 <body>
+<a class="skip-link" href="#main">Skip to content</a>
+<aside class="sidebar" aria-label="Workspace navigation">
+  <div class="sidebar-brand"><span class="brand-mark">S</span> Site Audit<span class="brand-dot">.</span></div>
+  <p class="nav-label">WORKSPACE</p>
+  <button class="side-link is-current" id="navAudit"><span aria-hidden="true">⊞</span> Audit workspace</button>
+  <button class="side-link" id="navHistory"><span aria-hidden="true">↺</span> Recent reports</button>
+  <div class="sidebar-note"><span class="eyebrow">A little clarity goes a long way.</span><p>Find the issues.<br>Make the fixes.<br>Build a better site.</p><span class="sidebar-foot">SEO &amp; website quality</span></div>
+</aside>
 
 <header class="topbar">
   <div class="brand">
@@ -18,33 +26,35 @@
       <path d="M15.5 15.5 L21 21" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
       <path d="M7.5 10.5 l2 2 4-4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
     </svg>
-    <span>Site Audit Console</span>
+    <span>Audit workspace</span><span class="header-divider">/</span><span class="header-caption">Site health, in focus</span>
   </div>
   <div class="topbar-actions">
     <button id="newCrawlBtn" class="btn btn-ghost hidden">New crawl</button>
   </div>
 </header>
 
-<main>
+<main id="main">
   <!-- ============ SETUP ============ -->
   <section id="setup" class="setup">
     <div class="setup-inner">
-      <h1>Crawl a site, find what's broken.</h1>
-      <p class="lede">Enter a URL. The crawler walks every internal page, checks it against SEO and technical rules, and hands you a list you can work through.</p>
+      <div class="hero"><div><p class="eyebrow">YOUR NEXT IMPROVEMENT STARTS HERE</p>
+      <h1>Small fixes.<br><span>A healthier website.</span></h1>
+      <p class="lede">Turn a website crawl into a clear next step. Check your pages, uncover SEO issues, and focus on what needs attention.</p></div>
+      <div class="hero-note"><span class="hero-symbol" aria-hidden="true">↗</span><strong>From URL to action plan</strong><p>Metadata, links, headings, structured data, and your own rules. One place to review it all.</p><span class="pill pill-ok">Built for practical fixes</span></div></div>
+
+      <div class="audit-card">
+      <div class="section-heading"><div><p class="eyebrow">01 / START AN AUDIT</p><h2>What website are we checking?</h2></div><span class="subtle-badge">Up to 500 pages</span></div>
 
       <div class="urlbar">
-        <input id="seedUrl" type="url" placeholder="https://example.com" autocomplete="url" spellcheck="false" />
-        <button id="startBtn" class="btn btn-primary">Start crawl</button>
+        <input id="seedUrl" type="url" aria-label="Website URL" placeholder="https://your-website.com" autocomplete="url" spellcheck="false" />
+        <button id="startBtn" class="btn btn-primary">Start crawl <span aria-hidden="true">↗</span></button>
       </div>
       <p class="hint">Crawls run on the server. HTTP mode uses less memory; choose Browser for JavaScript-heavy sites.</p>
-      <details class="panel" id="historyPanel">
-        <summary><span class="panel-title">Recent reports</span><span class="panel-sub">Saved in this browser</span></summary>
-        <div class="panel-body">
-          <p class="hint">Up to 5 completed reports are kept on this device. Export important results for a permanent copy.</p>
-          <div id="historyList"></div>
-          <button id="clearHistoryBtn" class="btn btn-ghost" type="button">Clear saved reports</button>
-        </div>
-      </details>
+      <div class="presets" role="group" aria-label="Crawl presets"><span>Quick setup</span>
+        <button class="preset" data-preset="quick" aria-pressed="false">Quick check <small>20 pages</small></button>
+        <button class="preset is-selected" data-preset="standard" aria-pressed="true">Standard <small>50 pages</small></button>
+        <button class="preset" data-preset="deep" aria-pressed="false">Deep dive <small>200 pages</small></button>
+      </div>
 
       <div class="opts">
         <label class="field">
@@ -67,6 +77,7 @@
           <input id="respectRobots" type="checkbox" checked />
           <span>Follow robots.txt rules</span>
         </label>
+      </div>
       </div>
 
       <details id="customDetails" class="panel">
@@ -106,6 +117,15 @@
           <div id="rulePreview" class="rulepreview hidden"></div>
         </div>
       </details>
+      <details class="panel" id="historyPanel">
+        <summary><span class="panel-title">Recent reports</span><span class="panel-sub">Your last five audits, saved in this browser</span></summary>
+        <div class="panel-body">
+          <p class="hint">Reports stay on this device. Export important results for a permanent copy.</p>
+          <div id="historyList"></div>
+          <button id="clearHistoryBtn" class="btn btn-ghost btn-sm" type="button">Clear saved reports</button>
+        </div>
+      </details>
+      <div class="workspace-footer"><span>Good websites are a work in progress.</span><span>Make the next fix count.</span></div>
     </div>
   </section>
 
@@ -114,7 +134,7 @@
     <div class="progress-inner">
       <div class="progress-head">
         <div>
-          <h2 id="progressTitle">Crawling</h2>
+          <p class="eyebrow">AUDIT IN PROGRESS</p><h2 id="progressTitle">Getting to know your site</h2>
           <p id="progressTarget" class="mono muted"></p>
         </div>
         <div class="progress-pct"><span id="progressPercent">0</span><small>%</small></div>
@@ -125,11 +145,13 @@
         <div><strong id="statCrawled">0</strong><span>crawled</span></div>
       </div>
       <ul id="crawlLog" class="log" aria-live="polite"></ul>
+      <p class="hint">You can refresh this page; we’ll reconnect while the server is running.</p>
     </div>
   </section>
 
   <!-- ============ RESULTS ============ -->
   <section id="results" class="results hidden">
+    <div class="results-heading"><div><p class="eyebrow">YOUR WEBSITE, UNDER THE MICROSCOPE</p><h1>Audit overview</h1><p id="reportContext" class="hint"></p></div><span class="subtle-badge">Completed audit</span></div>
     <div id="banner"></div>
 
     <div class="scoreboard">
@@ -151,6 +173,8 @@
       </div>
     </div>
 
+    <section class="priority-panel" aria-labelledby="priorityTitle"><div class="section-heading"><div><p class="eyebrow">A CLEAR NEXT STEP</p><h2 id="priorityTitle">Fix first</h2></div><span class="hint">Failures first, then pages affected</span></div><div id="priorityList"></div></section>
+
     <nav class="tabs" role="tablist">
       <button class="tab is-active" data-tab="issues" role="tab">Issues <span id="tabIssuesCount" class="count">0</span></button>
       <button class="tab" data-tab="pages" role="tab">Pages <span id="tabPagesCount" class="count">0</span></button>
@@ -163,11 +187,12 @@
     <!-- Issues -->
     <div id="panel-issues" class="tabpanel">
       <div class="toolbar">
-        <input id="issueSearch" type="search" class="search" placeholder="Search issues or URLs" />
-        <select id="filterSeverity"><option value="">Any severity</option><option value="FAIL">Failing</option><option value="WARNING">Warning</option><option value="INFO">For review</option></select>
-        <select id="filterCategory"><option value="">Any category</option></select>
-        <select id="filterRuleType"><option value="">Built-in + yours</option><option value="Standard">Built-in only</option><option value="Custom">Your rules only</option></select>
+        <input id="issueSearch" type="search" class="search" aria-label="Search issues" placeholder="Search issues or URLs" />
+        <select id="filterSeverity" aria-label="Filter by severity"><option value="">Any severity</option><option value="FAIL">Failing</option><option value="WARNING">Warning</option><option value="INFO">For review</option></select>
+        <select id="filterCategory" aria-label="Filter by category"><option value="">Any category</option></select>
+        <select id="filterRuleType" aria-label="Filter by rule type"><option value="">Built-in + yours</option><option value="Standard">Built-in only</option><option value="Custom">Your rules only</option></select>
         <span id="issueShown" class="muted sm"></span>
+        <button id="clearFiltersBtn" class="linkbtn">Reset filters</button>
       </div>
       <div class="tablewrap">
         <table class="grid">
@@ -188,7 +213,9 @@
     <!-- Pages -->
     <div id="panel-pages" class="tabpanel hidden">
       <div class="toolbar">
-        <input id="pageSearch" type="search" class="search" placeholder="Search pages" />
+        <input id="pageSearch" type="search" class="search" aria-label="Search pages" placeholder="Search pages" />
+        <select id="pageStatus" aria-label="Filter pages"><option value="">All pages</option><option value="broken">Broken / unreachable</option><option value="redirected">Redirected</option><option value="noindex">Noindex</option><option value="issues">With issues</option></select>
+        <button id="exportPagesBtn" class="btn btn-ghost btn-sm">Export pages CSV</button>
         <button class="chip" data-select="all">Select all</button>
         <button class="chip" data-select="issues">Select pages with issues</button>
         <button class="chip" data-select="none">Clear</button>

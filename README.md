@@ -53,6 +53,17 @@ See [Render health checks](https://render.com/docs/health-checks) and
   to validate redirect or metadata rules; these extra checks are outside the
   crawl page limit and robots filtering.
 - Searchable issues and pages, a page detail drawer, batch opening, CSV and JSON.
+- Responsive workspace with Quick (20 pages / depth 2), Standard (50 / 3), and
+  Deep (200 / 5) crawl presets. Presets change page/depth limits and preserve your
+  selected crawl mode and robots setting.
+- A Fix first list groups repeated issues, ranks by severity and affected pages,
+  and opens the matching issue filters. This is a prioritization aid, not an SEO
+  impact prediction.
+- Page filters for broken URLs, redirects, noindex, and pages with issues.
+  Export pages CSV downloads only the currently filtered pages; issue CSV still
+  includes all issues. Spreadsheet formula-like values are escaped on export.
+- An illustrative search-result preview in page details, with keyboard focus
+  management for the detail drawer. Search engines may use different snippets.
 - Automatic progress reconnection after temporary connection loss or refresh.
 - Up to five completed reports saved in this browser, subject to storage limits.
   Use Recent reports to reopen or clear them. Export important reports for backup.
