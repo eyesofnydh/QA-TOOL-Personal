@@ -118,6 +118,46 @@ export async function fetchRendered(urlStr, { timeoutMs = 15000 } = {}) {
   }
 }
 
+// Load the page in a real headless browser and read the browser's own
+// Navigation Timing / Paint Timing / Resource Timing. These are LAB metrics:
+// they reflect the network and CPU of the machine running this tool, not a
+// real end user's. Reuses the shared browser from getBrowser().
+export async function measurePageSpeed(urlStr, { timeoutMs = 30000 } = {}) {
+  await assertSafeUrl(urlStr);
+  const browser = await getBrowser();
+  const context = await browser.newContext({ serviceWorkers: 'block' });
+  try {
+    await context.route('**/*', async (route) => {
+      try {
+        await assertSafeUrl(route.request().url());
+        await route.continue();
+      } catch { await route.abort(); }
+    });
+    const page = await context.newPage();
+    const response = await page.goto(urlStr, { waitUntil: 'load', timeout: timeoutMs });
+    await page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => {});
+    const metrics = await page.evaluate(() => {
+      const nav = performance.getEntriesByType('navigation')[0];
+      const fcp = performance.getEntriesByType('paint').find((p) => p.name === 'first-contentful-paint');
+      const resources = performance.getEntriesByType('resource');
+      let transferBytes = nav?.transferSize || 0;
+      for (const r of resources) transferBytes += r.transferSize || 0;
+      const round = (v) => (typeof v === 'number' && v > 0 ? Math.round(v) : null);
+      return {
+        ttfbMs: round(nav?.responseStart),
+        firstContentfulPaintMs: round(fcp?.startTime),
+        domContentLoadedMs: round(nav?.domContentLoadedEventEnd),
+        loadMs: round(nav?.loadEventEnd),
+        requestCount: resources.length + 1,
+        transferBytes
+      };
+    });
+    return { url: page.url(), status: response ? response.status() : 0, ...metrics };
+  } finally {
+    await context.close();
+  }
+}
+
 function looksJsRendered(body) {
   if (!body) return true;
   const textOnly = body

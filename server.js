@@ -3,6 +3,7 @@ import multer from 'multer';
 import { randomUUID } from 'node:crypto';
 import { EventEmitter } from 'node:events';
 import { runCrawl } from './src/crawler.js';
+import { measurePageSpeed } from './src/fetcher.js';
 import { parseRuleFiles } from './src/ruleFileParser.js';
 import { parseCrawlOptions } from './src/crawlOptions.js';
 
@@ -126,6 +127,17 @@ app.post('/api/preview-rules', upload.array('ruleFiles'), async (req, res) => {
     const files = req.files.map((f) => ({ buffer: f.buffer, filename: f.originalname }));
     const parsed = await parseRuleFiles(files, req.body.seedUrl || 'https://example.com');
     res.json({ rules: parsed.rules.slice(0, 200), total: parsed.rules.length, warnings: parsed.warnings, globals: parsed.globals });
+  } catch (e) {
+    res.status(400).json({ error: e.message });
+  }
+});
+
+app.post('/api/pagespeed', rateLimit, async (req, res) => {
+  const url = typeof req.body?.url === 'string' ? req.body.url.trim() : '';
+  if (!url) return res.status(400).json({ error: 'A url is required.' });
+  try {
+    const result = await measurePageSpeed(url);
+    res.json(result);
   } catch (e) {
     res.status(400).json({ error: e.message });
   }
