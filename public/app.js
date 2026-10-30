@@ -501,6 +501,7 @@ function openDrawer(url) {
   const issues = report._issuesByUrl[url] || [];
   $('#drawerUrl').textContent = url;
   $('#drawerOpen').href = /^https?:\/\//i.test(url) ? url : '#';
+  $('#drawerSpeedResult').innerHTML = '';
   const a = p?.analysis;
   const rows = (pairs) => pairs.map(([k, v]) =>
     `<div class="drow"><dt>${esc(k)}</dt><dd class="mono">${v === '' || v == null ? '<span class="muted">not set</span>' : esc(v)}</dd></div>`).join('');
@@ -574,6 +575,41 @@ document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeDrawe
 $('#drawerCopy').onclick = async () => {
   try { await navigator.clipboard.writeText($('#drawerUrl').textContent); toast('URL copied'); }
   catch { toast('Copy failed — select the URL manually'); }
+};
+$('#drawerSpeed').onclick = async () => {
+  const url = $('#drawerUrl').textContent;
+  if (!/^https?:\/\//i.test(url)) { toast('Can only measure http(s) URLs'); return; }
+  const btn = $('#drawerSpeed');
+  const out = $('#drawerSpeedResult');
+  const label = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = 'Measuring…';
+  out.innerHTML = '<div class="dsec"><p class="muted sm">Loading the page in a real browser — this can take a few seconds…</p></div>';
+  try {
+    const res = await fetch('/api/pagespeed', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Measurement failed');
+    const ms = (v) => (v == null ? '' : `${v} ms`);
+    const kb = (b) => (b == null ? '' : `${(b / 1024).toFixed(0)} KB`);
+    const rowsHtml = [
+      ['Time to first byte', ms(data.ttfbMs)],
+      ['First contentful paint', ms(data.firstContentfulPaintMs)],
+      ['DOM content loaded', ms(data.domContentLoadedMs)],
+      ['Fully loaded', ms(data.loadMs)],
+      ['Requests', data.requestCount],
+      ['Transferred', kb(data.transferBytes)]
+    ].map(([k, v]) => `<div class="drow"><dt>${esc(k)}</dt><dd class="mono">${v === '' || v == null ? '<span class="muted">n/a</span>' : esc(v)}</dd></div>`).join('');
+    out.innerHTML = `<div class="dsec"><h3>Page speed (lab)</h3>${rowsHtml}<p class="hint">Measured by loading the page in a headless browser on the server. Reflects the server's network and CPU, not a real end user's.</p></div>`;
+  } catch (e) {
+    out.innerHTML = `<div class="dsec"><p class="muted sm">Could not measure: ${esc(e.message)}</p></div>`;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = label;
+  }
 };
 
 /* ---- export ---- */
