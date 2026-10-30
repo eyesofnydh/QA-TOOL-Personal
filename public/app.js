@@ -44,6 +44,22 @@ function goToSetup(showHistory = false) {
 $('#navAudit').onclick = () => goToSetup();
 $('#navHistory').onclick = () => goToSetup(true);
 
+/* ---------- sidebar collapse / overlay ---------- */
+const navMq = window.matchMedia('(max-width:850px)');
+const NAV_KEY = 'seo-audit-nav-collapsed';
+function setNav(collapsed) {
+  document.body.classList.toggle('nav-collapsed', collapsed);
+  $('#navToggle')?.setAttribute('aria-expanded', String(!collapsed));
+}
+setNav((() => { const saved = storage.get(NAV_KEY, null); return saved === null ? navMq.matches : !!saved; })());
+$('#navToggle').onclick = () => {
+  const collapsed = !document.body.classList.contains('nav-collapsed');
+  setNav(collapsed);
+  storage.set(NAV_KEY, collapsed);
+};
+$('#navScrim').onclick = () => { setNav(true); storage.set(NAV_KEY, true); };
+['#navAudit', '#navHistory'].forEach((sel) => $(sel).addEventListener('click', () => { if (navMq.matches) setNav(true); }));
+
 function toast(msg) {
   const t = $('#toast');
   t.textContent = msg;
@@ -287,7 +303,7 @@ function renderPriorities() {
   $('#priorityList').innerHTML = top.length ? top.map((item, index) => `
     <button class="priority-item" data-priority="${index}"><span class="priority-number">${String(index + 1).padStart(2, '0')}</span>
       <span class="priority-copy"><strong>${esc(item.issue)}</strong><span>${esc(item.recommendation)}</span></span>
-      <span class="priority-count"><span class="sev sev-${esc(item.severity)}">${item.urls.size} page${item.urls.size === 1 ? '' : 's'}</span><span aria-hidden="true">↗</span></span></button>`).join('')
+      <span class="priority-count"><span class="sev sev-${esc(item.severity)}">${item.urls.size} page${item.urls.size === 1 ? '' : 's'}</span><span aria-hidden="true">›</span></span></button>`).join('')
     : '<div class="empty">No issues flagged in this audit. Review your page details to see what was checked.</div>';
   $$('[data-priority]').forEach((button) => button.onclick = () => {
     const item = top[Number(button.dataset.priority)];
