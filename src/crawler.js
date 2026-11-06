@@ -6,6 +6,14 @@ import { analyzePage } from './seoChecks.js';
 import { assertSafeUrl } from './security.js';
 import { evaluateCustomRules, evaluateSchemaSpec } from './customRules.js';
 
+// Number of distinct standard checks buildReport() applies to each page
+// (HTTP status, render fallback, redirect chain, title present, title length,
+// meta description, missing H1, multiple H1, empty H1, heading hierarchy,
+// index, follow, canonical present, image alt, breadcrumb schema,
+// canonical double-slash, og:image, og:url, structured data). Used as the
+// scoring denominator — must track the checks below or the score saturates.
+const CHECKS_PER_PAGE = 19;
+
 export async function runCrawl(job, emit) {
   const { seedUrl, mode, maxPages, maxDepth, respectRobots } = job;
   await assertSafeUrl(seedUrl);
@@ -114,7 +122,7 @@ export async function runCrawl(job, emit) {
 
     const counts = { PASS: 0, WARNING: 0, FAIL: 0, INFO: 0 };
     for (const i of report.issues) counts[i.severity] = (counts[i.severity] || 0) + 1;
-    const totalChecks = Math.max(report.summary.checkedPages, 1) * 6 + rules.length;
+    const totalChecks = Math.max(report.summary.checkedPages, 1) * CHECKS_PER_PAGE + rules.length;
     counts.PASS = Math.max(0, totalChecks - counts.FAIL - counts.WARNING - counts.INFO);
     report.summary.counts = counts;
     report.summary.score = report.summary.checkedPages > 0
@@ -240,7 +248,7 @@ function buildReport(pages, robots) {
 
   const robotsSkippedCount = pages.filter((p) => p.status === 'skipped-robots').length;
   const checkedPages = pages.length - robotsSkippedCount;
-  const totalChecks = Math.max(checkedPages, 1) * 6;
+  const totalChecks = Math.max(checkedPages, 1) * CHECKS_PER_PAGE;
   const failWeight = counts.FAIL * 2 + counts.WARNING;
   const score = checkedPages > 0 ? Math.max(0, Math.min(100, Math.round(100 - (failWeight / totalChecks) * 100))) : null;
   counts.PASS = Math.max(0, totalChecks - counts.FAIL - counts.WARNING - counts.INFO);
