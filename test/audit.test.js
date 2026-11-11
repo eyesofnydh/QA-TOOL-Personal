@@ -16,7 +16,7 @@ const response = (body) => new Response(body, { headers: { 'content-type': 'text
 
 test('crawl options preserve depth zero and reject invalid limits and URLs', () => {
   assert.equal(parseCrawlOptions({ seedUrl: origin, maxDepth: '0' }).maxDepth, 0);
-  for (const maxPages of [-1, 'NaN', 501, 1.5]) {
+  for (const maxPages of [-1, 'NaN', 2001, 1.5]) {
     assert.throws(() => parseCrawlOptions({ seedUrl: origin, maxPages }));
   }
   for (const seedUrl of ['file:///etc/passwd', 'https://user:pass@example.com', 'wrong']) {

@@ -14,6 +14,6 @@ export function parseCrawlOptions(body = {}) {
   if (!['http', 'auto', 'browser'].includes(mode)) throw new Error('Invalid crawl mode.');
   if (!['extend', 'override', 'ignore'].includes(conflictMode)) throw new Error('Invalid rule conflict mode.');
   return { seedUrl: url.href, mode, conflictMode,
-    maxPages: integer('maxPages', 50, 1, 500), maxDepth: integer('maxDepth', 3, 0, 10),
+    maxPages: integer('maxPages', 50, 1, 2000), maxDepth: integer('maxDepth', 3, 0, 10),
     respectRobots: body.respectRobots === undefined || body.respectRobots === true || body.respectRobots === 'true' };
 }
